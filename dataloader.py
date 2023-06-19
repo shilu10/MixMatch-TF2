@@ -1,29 +1,15 @@
-import time, os
-import numpy as np 
-import pandas as pd 
-import matplotlib.pyplot as plt 
-import seaborn as ans 
-from tqdm import tqdm 
-import shutil 
-import tensorflow as tf 
 from tensorflow import keras 
-from tensorflow.keras import Model
-from tensorflow.keras import layers 
-from tensorflow.keras.layers import *
-import tensorflow_datasets as tfds
-from tensorflow.keras.initializers import RandomNormal
-from tensorflow.keras import *
-from datetime import datetime
-from tensorflow.keras.applications.vgg19 import VGG19
-from tensorflow.keras.activations import sigmoid
-from tensorflow.keras.layers import Dense, Input, UpSampling2D, Conv2DTranspose, Conv2D, add, Add,\
-                    Lambda, Concatenate, AveragePooling2D, BatchNormalization, GlobalAveragePooling2D, \
-                    Add, LayerNormalization, Activation, LeakyReLU, SeparableConv2D, Softmax, MaxPooling2D
+import tensorflow as tf 
+import numpy as np 
+import time 
+import os, shutil
+from glob import glob 
+import tensorflow_dataset as tfds
 
 
-class DataLoader:
+class DataLoader: 
     """
-        Class, will be useful for creating the BYOL dataset or dataset for the DownStream task
+        Class, will be useful for creating the BYOL dataset or dataset for the DownStream task 
             like classification or segmentation.
         Methods:
             __download_data(scope: private)
@@ -32,36 +18,35 @@ class DataLoader:
              __get_valdata(scope: private)
             get_dataset(scope: public)
             __create_tf_dataset(scope: public)
-
+        
         Property:
             dname(dtype: str)        : dataset name(supports cifar10, cifar100).
             n_val(type: int)         : Number of validation data needed, this will be created by splitting the testing
                                        data.
             resize_shape(dtype: int) : Resize shape, bcoz pretrained models, might have a different required shape.
-            normalize(dtype: bool)   : bool value, whether to normalize the data or not.
+            normalize(dtype: bool)   : bool value, whether to normalize the data or not. 
             n_labeled(dtype: int)    : number of training samples needed to be labeled.
     """
-
-    def __init__(self, dname="cifar10", n_val=5000, normalize=True, n_labelled_samples=100):
+    
+    def __init__(self, dname="cifar10", n_val=5000, normalize=True, n_labelled_samples=100): 
         assert dname in ["cifar10", 'cifar100', "svhn"], "supported datasets are cifar10, cifar100,svhn"
         assert n_val <= 10_000, "ValueError: nval value should be <= 10_000"
-
+        
         self.__n_labelled_samples = n_labelled_samples
         train_data, test_data = self.__download_data(dname)
         self.__train_X, self.__train_y = train_data
-        self.__dtest_X, self.__dtest_y = test_data
-
+        self.__dtest_X, self.__dtest_y = test_data 
+        
         self.__get_unlabeled_data()
-        self.__get_valdata(n_val)
+        self.__get_valdata(n_val)        
         self.__normalize() if normalize else None
-
-
-    def __len__(self):
+        
+    def __len__(self): 
         return self.__train_X.shape[0] + self.__dtest_X.shape[0]
-
-    def __repr__(self):
+    
+    def __repr__(self): 
         return f"Training Samples: {self.__train_X.shape[0]}, Testing Samples: {self.__dtest_X.shape[0]}"
-
+    
     def __download_data(self, dname):
         """
             Downloads the data from the tensorflow website using the tensorflw.keras.load_data() method.
@@ -70,26 +55,30 @@ class DataLoader:
             Return(type(np.ndarray, np.ndarray))
                 returns the training data and testing data
         """
-        if dname == "cifar10":
+        if dname == "cifar10": 
             train_data, test_data = tf.keras.datasets.cifar10.load_data()
-
-        if dname == "cifar100":
+            self.__n_labels = len(np.unique(test_data[1]))
+            print(self.__n_labels)
+            
+        if dname == "cifar100": 
             train_data, test_data = tf.keras.datasets.cifar100.load_data()
-
+            self.__n_labels = len(np.unique(test_data[1]))
+            
         if dname == "svhn":
             dataset = tfds.load(name='svhn_cropped')
             train_data = dataset['train']
             test_data = dataset['test']
-
+            self.__n_labels = len(np.unique(test_data[1]))
+            
         return train_data, test_data
-
-    def __normalize(self):
+    
+    def __normalize(self): 
         """
             this method, will used to normalize the inputs.
         """
         self.__train_X = self.__train_X / 255.0
         self.__dtest_X = self.__dtest_X / 255.0
-
+    
 
     def __preprocess_tf_dataset(self, tf_ds, batch_size, transform=False, subset="unlablled"):
         try:
@@ -99,18 +88,18 @@ class DataLoader:
                 if subset == 'unlabelled':
                     tf_ds = tf_ds.map(lambda x: self.__augment(x, is_label=False),
                                           num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
+                    
                 else:
                     tf_ds = tf_ds.map(lambda x, y: self.__augment(x, y),
                                           num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-
-            tf_ds = tf_ds.prefetch(tf.data.experimental.AUTOTUNE)
+                
+            
+            tf_ds = tf_ds.prefetch(tf.data.experimental.AUTOTUNE)   
             return tf_ds
-
+        
         except Exception as err:
             return err
-
+    
     def get_dataset(self, batch_size, subset="unlabelled",
                                         transform=False, k_augmentation=1):
         """
@@ -119,7 +108,7 @@ class DataLoader:
             Params:
                 batch_size(dtype: int)   : Batch Size.
                 subset(dtype: str) : which type of dataset needed
-
+                
             return(type: tf.data.Dataset)
                 returns the tf.data.Dataset for intended dataset_type,
                 by preprocessing and converting the np data.
@@ -128,7 +117,7 @@ class DataLoader:
             if subset == "unlabelled":
                 tf_ds = tf.data.Dataset.from_tensor_slices((self.__unlabelled_X))
                 res = []
-
+                
                 for _ in range(k_augmentation):
                     inner_res = self.__preprocess_tf_dataset(
                                             tf_ds=tf_ds,
@@ -137,9 +126,9 @@ class DataLoader:
                                             subset=subset
                                         )
                     res.append(inner_res)
-
+                
                 return tf.data.Dataset.zip(tuple(res))
-
+            
             if subset == "labelled":
                 tf_ds = tf.data.Dataset.from_tensor_slices((self.__labelled_X, self.__labelled_y))
                 tf_ds = self.__preprocess_tf_dataset(
@@ -148,8 +137,8 @@ class DataLoader:
                                         transform=transform,
                                         subset=subset
                                     )
-                return tf_ds
-
+                return tf_ds  
+            
             if subset == "val":
                 tf_ds = tf.data.Dataset.from_tensor_slices((self.__val_X, self.__val_y))
                 tf_ds = self.__preprocess_tf_dataset(
@@ -158,8 +147,8 @@ class DataLoader:
                                         transform=transform,
                                         subset=subset
                                     )
-                return tf_ds
-
+                return tf_ds  
+            
             if subset == "test":
                 tf_ds = tf.data.Dataset.from_tensor_slices((self.__test_X, self.__test_y))
                 tf_ds = self.__preprocess_tf_dataset(
@@ -168,31 +157,31 @@ class DataLoader:
                                         transform=transform,
                                         subset=subset
                                     )
-                return tf_ds
-
+                return tf_ds  
+        
         except Exception as err:
             return err
-
+    
     def __get_valdata(self, nval):
         """
             this method is used to create a validation data by randomly sampling from the testing data.
             Params:
-                nval(dtype: Int); Number of validation data needed, rest of test_X.shape[0] - nval, will be
+                nval(dtype: Int); Number of validation data needed, rest of test_X.shape[0] - nval, will be 
                                   testing data size.
             returns(type; np.ndarray, np.ndarray):
                 returns the testing and validation dataset.
         """
-        try:
+        try: 
             ind_arr = np.arange(10_000)
             val_inds = np.random.choice(ind_arr, nval, replace=False)
             test_inds = [i for i in ind_arr if not i in val_inds]
 
             self.__test_X, self.__test_y = self.__dtest_X[test_inds], self.__dtest_y[test_inds]
             self.__val_X, self.__val_y = self.__dtest_X[val_inds], self.__dtest_y[val_inds]
-
+            
         except Exception as err:
-            raise err
-
+            raise err    
+            
     def __get_unlabeled_data(self):
         try:
             ind_arr = np.arange(40_000)
@@ -207,13 +196,14 @@ class DataLoader:
 
             self.__unlabelled_X = self.__train_X[unlabelled_inds]
             self.__unlabelled_y = self.__train_y[unlabelled_inds]
-
+        
         except Exception as err:
-            return err
-
+            return err 
+    
     @tf.function
     def __augment(self, x, label=None, is_label=True):
         try:
+            x = tf.image.convert_image_dtype(x, dtype=tf.float32)
             # random left right flipping
             x = tf.image.random_flip_left_right(x)
             # random pad and crop
@@ -222,8 +212,9 @@ class DataLoader:
             if not is_label:
                 return x
             else:
+                label = tf.one_hot(label, self.__n_labels)
+                label = tf.reshape(label, (x.shape[0], self.__n_labels))
                 return x, label
-
+            
         except Exception as err:
             return err
-
